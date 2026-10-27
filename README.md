@@ -2,6 +2,10 @@
 
 An HTML-based home billing management system — fully local, no internet required, private and secure, easy to use, with one-click Excel export.
 
+# Website
+
+Official website: [https://furida-one.195868.xyz](https://furida-one.195868.xyz)
+
 ## Features
 
 - **Fully Local & Private**: Your billing data stays entirely on your own computer and never leaves it
