@@ -372,7 +372,7 @@ a { color: var(--brand); text-decoration: none; }
 .toolbar .spacer { flex: 1; }
 .toolbar .field-input, .toolbar .field-select { width: auto; min-width: 130px; }
 
-/* 月份导航（‹ October 2026 ›） */
+/* 月份导航（‹ October 2026 ›）：白底描边小盒，仅此一层边框 */
 .month-nav {
   display: inline-flex; align-items: center; gap: 4px;
   background: #fff; border: 1px solid var(--border-strong);
@@ -384,6 +384,12 @@ a { color: var(--brand); text-decoration: none; }
   font-family: var(--font-mono); letter-spacing: -0.01em;
 }
 .month-nav .icon-btn { width: 26px; height: 26px; }
+/* 可点击的月份文字区：hover 微亮提示可点，点击弹出年月选择面板 */
+.month-nav .mn-mid {
+  position: relative; cursor: pointer; border-radius: var(--radius-sm);
+  padding: 3px 8px; transition: background 0.15s;
+}
+.month-nav .mn-mid:hover { background: rgba(79, 70, 229, 0.08); }
 
 /* 图例小圆点 */
 .legend-dot { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 7px; vertical-align: baseline; }
@@ -524,7 +530,13 @@ a { color: var(--brand); text-decoration: none; }
 }
 
 /* 认证卡片：白色大圆角 + 柔和深投影 + 顶部靛蓝→青绿细条 */
-.auth-card { position: relative; z-index: 1; width: 100%; max-width: 452px; }
+.auth-card { position: relative; z-index: 1; width: 100%; max-width: 560px; }
+/* 解锁/锁屏卡：宽度自适应内容——由最长一行文字的自然宽度决定，保证文字不折行；
+   min-width 防止内容极少时卡片过窄，92vw 兜底极窄窗口 */
+.auth-card.slim { width: fit-content; max-width: 92vw; min-width: 400px; }
+/* 解锁/锁屏卡稍加高：加大上下内边距与区块间距，视觉更舒展 */
+.auth-card.slim .auth-panel { padding: 44px 34px 38px; }
+.auth-card.slim .auth-foot { margin-top: 24px; }
 .auth-panel {
   position: relative; overflow: hidden;
   background: linear-gradient(180deg, #ffffff, #fcfeff);
@@ -802,7 +814,12 @@ tr:hover .row-actions, .bill-row:hover .row-actions { opacity: 1; }
 .env-left { width: 150px; text-align: right; font-size: 12.5px; font-weight: 650; font-variant-numeric: tabular-nums; flex-shrink: 0; font-family: var(--font-mono); }
 
 /* ================= Reports / 图表 ================= */
-.charts-grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 16px; align-items: start; }
+.charts-grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 16px; }
+/* 图表卡纵向弹性布局：图表随卡片高度伸缩，但封顶 240px 保持大小适中；
+   截断后的剩余空间由 card-pad 垂直居中吸收，避免"顶头贴底"或"下方一大块空白" */
+.charts-grid .card { display: flex; flex-direction: column; }
+.charts-grid .card .card-pad { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: center; }
+.charts-grid .card .chart-wrap { flex: 1 1 auto; min-height: 180px; max-height: 240px; }
 /* 图表区铺一层极淡的方格纸，呼应"账页" */
 .chart-wrap {
   position: relative; border-radius: 12px;
@@ -829,7 +846,7 @@ tr:hover .row-actions, .bill-row:hover .row-actions { opacity: 1; }
 .legend-row .lg-pct { color: var(--text-3); width: 46px; text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
 
 /* ================= Settings ================= */
-.set-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; align-items: start; }
+.set-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 .set-card { padding: 20px 22px; }
 .set-card h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; margin-bottom: 5px; }
 .set-card h3::before {
@@ -1256,10 +1273,15 @@ window.HL = window.HL || {};
     return y + '-' + String(m + 1).padStart(2, '0');
   };
 
-  /** 日期（ISO）加减 n 个月，日超出目标月天数时钳制到月末（如 1/31 + 1月 => 2/28） */
-  U.addMonthsISO = function (iso, n) {
+  /**
+   * 日期（ISO）加减 n 个月，日超出目标月天数时钳制到月末（如 1/31 + 1月 => 2/28）。
+   * anchorDay：账单的"原始应缴日"（1-31）。不传则取 iso 自身的日。
+   * 关键作用：31 日账单推进到 11-30 后，下次若按 30 推进会得到 12-30（越漂越早）；
+   * 传入 anchorDay=31 则正确回到 12-31。
+   */
+  U.addMonthsISO = function (iso, n, anchorDay) {
     const d = U.parseDate(iso);
-    const day = d.getDate();
+    const day = (anchorDay >= 1 && anchorDay <= 31) ? anchorDay : d.getDate();
     d.setDate(1);
     d.setMonth(d.getMonth() + n);
     const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
@@ -1267,16 +1289,19 @@ window.HL = window.HL || {};
     return U.toISODate(d);
   };
 
-  /** 按账单频率把日期推进一个周期（monthly/quarterly 等使用日钳制逻辑） */
-  U.advanceByFrequency = function (iso, freq) {
+  /**
+   * 按账单频率把日期推进一个周期（monthly/quarterly 等使用日钳制逻辑）
+   * anchorDay：原始应缴日，用于月末账单跨月推进时不漂移（见 addMonthsISO）
+   */
+  U.advanceByFrequency = function (iso, freq, anchorDay) {
     const d = U.parseDate(iso);
     switch (freq) {
       case 'weekly': d.setDate(d.getDate() + 7); break;
       case 'bi-weekly': d.setDate(d.getDate() + 14); break;
-      case 'monthly': return U.addMonthsISO(iso, 1);
-      case 'quarterly': return U.addMonthsISO(iso, 3);
-      case 'semi-annual': return U.addMonthsISO(iso, 6);
-      case 'annual': return U.addMonthsISO(iso, 12);
+      case 'monthly': return U.addMonthsISO(iso, 1, anchorDay);
+      case 'quarterly': return U.addMonthsISO(iso, 3, anchorDay);
+      case 'semi-annual': return U.addMonthsISO(iso, 6, anchorDay);
+      case 'annual': return U.addMonthsISO(iso, 12, anchorDay);
       default: return iso;
     }
     return U.toISODate(d);
@@ -1390,7 +1415,8 @@ window.HL = window.HL || {};
       if (!p) continue;
       if (!seen.has(p) || t.date > seen.get(p)) seen.set(p, t.date);
     }
-    return Array.from(seen.entries()).sort((a, b) => b[1] - a[1]).map((e) => e[0]);
+    // ISO 日期字符串按字典序比较即时间序（不能做减法：字符串相减为 NaN，排序会失效）
+    return Array.from(seen.entries()).sort((a, b) => (a[1] < b[1] ? 1 : a[1] > b[1] ? -1 : 0)).map((e) => e[0]);
   };
 
   /** 深克隆简单对象（账本数据均为纯 JSON，JSON 序列化足够且最稳） */
@@ -1592,7 +1618,8 @@ window.HL = window.HL || {};
  * 三个职责：
  *   1. kv 存储：FileSystemFileHandle（下次打开一键续用）、
  *              "记住我" CryptoKey + 校验值
- *   2. snapshots 存储：最近 3 次保存的加密账本快照（文件损坏/误改时恢复）
+ *   2. snapshots 存储：按天采样的加密账本快照（最近一天最多 3 份 +
+ *      更早每天 1 份，最多 7 天；文件损坏/误改时恢复）
  *   3. 全部以 Promise 包装，供上层 async/await 调用
  * 说明：非导出 CryptoKey 可经 structured clone 存入 IndexedDB，
  *       读回后仍是不可导出的密钥句柄，原始字节不落盘。
@@ -1663,7 +1690,43 @@ window.HL = window.HL || {};
   }
 
   /**
-   * 追加一份加密快照（传入完整 .hledger 文件字节），并只保留最近 3 份
+   * 快照保留策略（按天采样，避免"最近几分钟的 3 个版本"无法回滚）：
+   *   - 最近一个自然日内：保留最新 3 份（覆盖"刚改错马上发现"的场景）
+   *   - 更早的每个自然日：只保留当天最早的一份（≈前一天结束时的状态）
+   *   - 最多覆盖最近 7 个自然日，总量硬上限 12 份（防御异常数据）
+   * @param {Array} all 全部快照（newest first）
+   * @returns {Set<number>} 应保留的快照 id 集合
+   */
+  function pickSnapshotKeepIds(all) {
+    const RECENT_PER_DAY = 3, MAX_DAYS = 7, HARD_CAP = 12;
+    // 按自然日分桶（all 已按时间倒序，桶内 newest -> oldest），记录当天零点时间戳
+    const groups = [];
+    let cur = null;
+    for (const sn of all) {
+      const d = new Date(sn.savedAt);
+      const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      if (!cur || cur.key !== key) { cur = { key, dayStart: new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(), list: [] }; groups.push(cur); }
+      cur.list.push(sn);
+    }
+    const keep = new Set();
+    const baseDay = groups.length ? groups[0].dayStart : 0;
+    groups.forEach((g, gi) => {
+      if (keep.size >= HARD_CAP) return;
+      // 以最近一份快照所在日为基准，仅覆盖最近 7 个"日历日"（而非 7 个有快照的日子）
+      if (Math.round((baseDay - g.dayStart) / 86400000) > MAX_DAYS - 1) return;
+      const picks = gi === 0
+        ? g.list.slice(0, RECENT_PER_DAY)              // 最近的一天：最新几份
+        : [g.list[g.list.length - 1]];                 // 更早的天：当天最早一份
+      for (const sn of picks) {
+        if (keep.size >= HARD_CAP) return;
+        keep.add(sn.id);
+      }
+    });
+    return keep;
+  }
+
+  /**
+   * 追加一份加密快照（传入完整 .hledger 文件字节），并按天采样裁剪旧快照
    * @param {ArrayBuffer|Uint8Array} bytes 加密文件字节（快照同样加密，无明文旁路）
    */
   async function addSnapshot(bytes, label) {
@@ -1673,11 +1736,11 @@ window.HL = window.HL || {};
       label: label || '',
       data: bytes instanceof Uint8Array ? bytes.slice().buffer : bytes
     }));
-    // 裁剪：按时间倒序，删除第 3 份之后的旧快照
+    // 裁剪：仅删除不在保留计划内的旧快照
     const all = await listSnapshots();
-    if (all.length > 3) {
-      const olds = all.slice(3);
-      for (const o of olds) await tx('snapshots', 'readwrite', (s) => s.delete(o.id));
+    const keep = pickSnapshotKeepIds(all);
+    for (const o of all) {
+      if (!keep.has(o.id)) await tx('snapshots', 'readwrite', (s) => s.delete(o.id));
     }
   }
 
@@ -1719,18 +1782,43 @@ window.HL = window.HL || {};
     return kvDel('remember');
   }
 
-  /** 清空本应用全部本地缓存（句柄 + 快照 + 记住我；账本文件本身不受影响） */
+  /**
+   * 降级模式的自动保存暂存：以固定 key 覆盖式写入（同一时刻只有一份最新数据）。
+   * 存的仍是加密文件字节，浏览器内不出现明文。
+   * 这样降级模式下"保存"不再每次下载新副本，只有用户主动导出才产生文件。
+   */
+  function setAutosave(bytes, name) {
+    return kvPut('autosave', {
+      name: name || '',
+      savedAt: Date.now(),
+      size: bytes.byteLength,
+      data: bytes instanceof Uint8Array ? bytes.slice().buffer : bytes
+    });
+  }
+  /** 读取降级模式暂存的加密账本（{name, savedAt, data:ArrayBuffer}，没有则 null） */
+  function getAutosave() {
+    return kvGet('autosave').then((v) => v || null);
+  }
+  /** 清除降级模式暂存（删除账本/重置时） */
+  function clearAutosave() {
+    return kvDel('autosave');
+  }
+
+  /** 清空本应用全部本地缓存（句柄 + 快照 + 记住我 + 降级暂存；账本文件本身不受影响） */
   async function clearAll() {
     await kvDel('fileHandle');
     await kvDel('remember');
     await clearSnapshots();
+    await kvDel('autosave');
   }
 
   HL.idb = {
     saveHandle, getHandle, clearHandle,
     addSnapshot, listSnapshots, getSnapshot, clearSnapshots,
     saveRemember, getRemember, clearRemember,
-    clearAll
+    setAutosave, getAutosave, clearAutosave,
+    clearAll,
+    _planSnapshotRetention: pickSnapshotKeepIds // 内部策略导出：仅供自动化测试/调试观察
   };
 })();
 
@@ -1758,11 +1846,12 @@ window.HL = window.HL || {};
   }];
 
   /**
-   * 新建账本：弹出系统"保存"对话框，让用户选择账本文件位置
+   * 新建账本 / 保存失败后重定位：弹出系统"保存"对话框选择写入位置。
+   * 用 save picker 而非 open picker：重定位可能要选一个尚不存在的新文件。
    * @param {string} suggested 默认文件名 FamilyLedger.hledger
    * @returns {Promise<FileSystemFileHandle|null>} 用户取消时返回 null
    */
-  F.pickNewFile = async function (suggested) {
+  F.pickSaveLocation = async function (suggested) {
     try {
       return await window.showSaveFilePicker({
         suggestedName: suggested || 'FamilyLedger.hledger',
@@ -1773,13 +1862,18 @@ window.HL = window.HL || {};
     }
   };
 
+  // 新建账本的保存位置选择与重定位共用同一个 save picker 语义
+  F.pickNewFile = F.pickSaveLocation;
+
   /**
-   * 打开账本：弹出系统"打开"对话框选择已有 .hledger 文件
+   * 打开账本：弹出系统"打开"对话框选择已有 .hledger 文件。
+   * 必须以 readwrite 模式请求：规范默认 mode 为 'read'，
+   * 只读句柄在首次自动保存调 createWritable() 时会抛错（当次打开、当次编辑的路径会断）。
    * @returns {Promise<FileSystemFileHandle|null>} 用户取消时返回 null
    */
   F.pickOpenFile = async function () {
     try {
-      const [handle] = await window.showOpenFilePicker({ types: FILE_TYPES, multiple: false });
+      const [handle] = await window.showOpenFilePicker({ types: FILE_TYPES, multiple: false, mode: 'readwrite' });
       return handle || null;
     } catch (e) {
       return null;
@@ -1993,7 +2087,10 @@ window.HL = window.HL || {};
     if (v && typeof v === 'object' && v.d) {
       // 日期：Excel 序列号 = 自 1899-12-30 起的天数（含 1900 闰年 bug 的惯例补偿）
       const serial = Math.round((U.parseDate(v.d) - U.parseDate('1899-12-30')) / 86400000);
-      return '<c r="' + ref + '"' + styleAttr + ' s="' + (s || 3) + '"><v>' + serial + '</v></c>';
+      // 样式：调用方指定则用之，否则回退到内置短日期样式 3；
+      // 注意只能输出一个 s 属性（此前把默认值又追加一次会产生重复属性，属于无效 XML）
+      const st = s || 3;
+      return '<c r="' + ref + '" s="' + st + '"><v>' + serial + '</v></c>';
     }
     if (typeof v === 'number' && isFinite(v)) {
       return '<c r="' + ref + '"' + styleAttr + '><v>' + v + '</v></c>';
@@ -2043,10 +2140,15 @@ window.HL = window.HL || {};
    *   4 加粗文本 | 5 加粗货币（合计行） | 6 百分比 | 7 红色负数货币
    */
   function stylesXml(cur) {
+    // 货币数字格式：正数 $1,234.50；负数红色 -$1,234.50
+    // 注意：formatCode 里绝不能用引号把格式码整体包住——Excel 格式语法中
+    // 双引号包裹的部分会被当作"字面文本"原样显示，导致所有金额列
+    // 直接显示 $#,##0.00;[Red]-$#,##0.00 这串文本而不是数值。
     const moneyFmt = currencySymbol(cur) + '#,##0.00;[Red]-' + currencySymbol(cur) + '#,##0.00';
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-      '<numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;' + moneyFmt + '&quot;"/></numFmts>' +
+      // 仅做 XML 属性转义（& < > " '），不改变格式码本身语义
+      '<numFmts count="1"><numFmt numFmtId="164" formatCode="' + U.xmlEsc(moneyFmt) + '"/></numFmts>' +
       '<fonts count="3">' +
       '<font><sz val="11"/><name val="Calibri"/></font>' +
       '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>' +
@@ -2302,20 +2404,23 @@ window.HL = window.HL || {};
 
   /**
    * 立即加密并写盘（自动保存 / 关键操作后的统一落盘路径）
-   * FS 模式：原地覆写用户文件 + 记录加密快照；降级模式：仅标记等待手动下载。
+   * FS 模式：原地覆写用户文件；降级模式：覆盖式写入浏览器固定暂存（不再下载新副本）。
    * @returns {Promise<boolean>} 是否成功
    */
   async function persistNow() {
     if (!state.ledger || !rt.key) return false;
-    if (!rt.handle) {
-      // 降级模式：无句柄可写，等待用户点击"下载保存"
-      return false;
-    }
     state.saveStatus = 'saving';
     try {
       const bytes = await HL.crypto.encryptLedgerWithKey(state.ledger, rt.key, rt.salt, rt.hint);
-      await HL.files.writeHandle(rt.handle, bytes);
       rt.lastBytes = bytes;
+      if (rt.handle) {
+        // FS Access 模式：原地覆写用户文件（浏览器保证原子替换，中断不损旧文件）
+        await HL.files.writeHandle(rt.handle, bytes);
+      } else {
+        // 降级模式：无句柄无法覆盖原文件。改为覆盖式写入浏览器固定暂存，
+        // "保存"不再每次下载新副本；需要文件副本时由用户手动导出
+        await HL.idb.setAutosave(bytes, state.fileName);
+      }
       await HL.idb.addSnapshot(bytes, state.fileName).catch(() => {}); // 快照失败不影响主流程
       state.saveStatus = 'saved';
       state.saveError = '';
@@ -2327,16 +2432,56 @@ window.HL = window.HL || {};
     }
   }
 
-  /** 降级模式手动保存：加密后经浏览器下载落盘 */
-  function saveByDownload() {
+  /**
+   * 手动导出账本文件副本（两种模式都可用的"另存一份"操作）。
+   * 降级模式的自动保存已写入浏览器暂存，此操作用于产生/更新本地文件副本。
+   * 保存位置：环境支持"另存为"选择器（window.showSaveFilePicker）时弹出系统对话框
+   * 让用户选择保存位置；不支持的环境（当前降级浏览器均不支持）自动回退为普通下载。
+   */
+  async function saveByDownload() {
     if (!state.ledger || !rt.key) return;
-    HL.crypto.encryptLedgerWithKey(state.ledger, rt.key, rt.salt, rt.hint).then((bytes) => {
+    const bytes = await HL.crypto.encryptLedgerWithKey(state.ledger, rt.key, rt.salt, rt.hint);
+    rt.lastBytes = bytes;
+    let saved = false;
+    // 能力检测：有"另存为"选择器时优先让用户选位置（未来浏览器支持后自动生效）
+    if (typeof window.showSaveFilePicker === 'function') {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: state.fileName || 'FamilyLedger.hledger',
+          types: [{ description: 'Home Ledger encrypted file', accept: { 'application/octet-stream': ['.hledger'] } }]
+        });
+        const w = await handle.createWritable();
+        await w.write(bytes);
+        await w.close();
+        saved = true;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return; // 用户取消了另存为：不下载、不打扰
+        // 其他错误（权限被拒等）回退到普通下载
+      }
+    }
+    if (!saved) HL.files.downloadBytes(bytes, state.fileName || 'FamilyLedger.hledger');
+    HL.idb.setAutosave(bytes, state.fileName).catch(() => {}); // 同步刷新浏览器暂存
+    HL.idb.addSnapshot(bytes, state.fileName).catch(() => {});
+    state.saveStatus = 'saved';
+    toast(saved ? 'A copy of your ledger was saved.' : 'A copy of your ledger was downloaded.', 'info');
+  }
+
+  /**
+   * 降级模式：从浏览器固定暂存恢复上次会话的账本（无需重新选择文件）。
+   * 暂存中是加密字节，恢复后仍进入解锁界面验证主密码。
+   */
+  async function continueFallbackCopy() {
+    try {
+      const rec = await HL.idb.getAutosave();
+      if (!rec || !rec.data) { toast('No in-browser copy found.', 'error'); return; }
+      const bytes = new Uint8Array(rec.data);
       rt.lastBytes = bytes;
-      HL.files.downloadBytes(bytes, state.fileName || 'FamilyLedger.hledger');
-      state.saveStatus = 'saved';
-      toast('Ledger file downloaded. Keep it in a place you can find.', 'info');
-      HL.idb.addSnapshot(bytes, state.fileName).catch(() => {});
-    });
+      state.fileName = rec.name || 'FamilyLedger.hledger';
+      // "记住我"生效则直进主界面，否则走密码解锁
+      if (!(await tryRememberUnlock(bytes))) gotoUnlock(bytes);
+    } catch (e) {
+      toast('Could not open the in-browser copy: ' + e.message, 'error');
+    }
   }
 
   /**
@@ -2550,9 +2695,9 @@ window.HL = window.HL || {};
     return true;
   }
 
-  /** 保存失败后的"重新定位文件"：选择新位置并写回当前数据 */
+  /** 保存失败后的"重新定位文件"：save picker 选择新位置（可为新文件）并写回当前数据 */
   async function relocateFile() {
-    const handle = await HL.files.pickOpenFile();
+    const handle = await HL.files.pickSaveLocation(state.fileName);
     if (!handle) return false;
     rt.handle = handle;
     state.fileName = handle.name;
@@ -2649,18 +2794,20 @@ window.HL = window.HL || {};
 
   /* ==================== 账单（Bills） ==================== */
 
-  /** 新增循环账单 */
+  /** 新增循环账单（dayOfMonth 记录原始应缴日，月末账单跨月推进不漂移） */
   function addBill(b) {
     state.ledger.bills.push({
       id: U.uid(), name: b.name, payee: b.payee, categoryId: b.categoryId,
       accountId: b.accountId, amount: U.round2(b.amount), isEstimate: !!b.isEstimate,
-      frequency: b.frequency, nextDueDate: b.nextDueDate, autoPay: !!b.autoPay,
+      frequency: b.frequency, nextDueDate: b.nextDueDate,
+      dayOfMonth: U.parseDate(b.nextDueDate).getDate(),
+      autoPay: !!b.autoPay,
       reminderDays: Number(b.reminderDays) || 3, url: b.url || ''
     });
     touch();
   }
 
-  /** 更新账单 */
+  /** 更新账单（应缴日变更时同步刷新 dayOfMonth 锚点） */
   function updateBill(id, patch) {
     const b = state.ledger.bills.find((x) => x.id === id);
     if (!b) return;
@@ -2668,7 +2815,9 @@ window.HL = window.HL || {};
       name: patch.name, payee: patch.payee, categoryId: patch.categoryId,
       accountId: patch.accountId, amount: U.round2(patch.amount),
       isEstimate: !!patch.isEstimate, frequency: patch.frequency,
-      nextDueDate: patch.nextDueDate, autoPay: !!patch.autoPay,
+      nextDueDate: patch.nextDueDate,
+      dayOfMonth: U.parseDate(patch.nextDueDate).getDate(),
+      autoPay: !!patch.autoPay,
       reminderDays: Number(patch.reminderDays) || 3, url: patch.url || ''
     });
     touch();
@@ -2703,9 +2852,14 @@ window.HL = window.HL || {};
       billId: b.id
     };
     state.ledger.transactions.push(txn);
-    b.nextDueDate = U.advanceByFrequency(b.nextDueDate, b.frequency);
-    b.isEstimate = false; // 实付过一次后默认按实付金额记
-    if (opts.amount != null) b.amount = U.round2(opts.amount);
+    // 推进基准=原始应缴日（dayOfMonth）：31 日账单 10-31 → 11-30 → 12-31 不再越漂越早；
+    // 旧账本无该字段时懒迁移（按当前到期日初始化，无法追溯更早的漂移，但此后不再漂）
+    if (!b.dayOfMonth) b.dayOfMonth = U.parseDate(b.nextDueDate).getDate();
+    b.nextDueDate = U.advanceByFrequency(b.nextDueDate, b.frequency, b.dayOfMonth);
+    // 仅"估算金额"账单（水电费等浮动账单）才用实付额更新后续周期的标准金额；
+    // 固定金额账单（房租等）偶尔多付/少付（如补滞纳金）不应永久改变账单金额。
+    // isEstimate 保持不变：水电费逐月浮动，下期仍要提示输入实付额
+    if (b.isEstimate && opts.amount != null) b.amount = U.round2(opts.amount);
     touch();
   }
 
@@ -2806,18 +2960,14 @@ window.HL = window.HL || {};
    * 展示"已退出"提示页，由用户手动关闭标签页（数据已保存，不会丢失）。
    */
   async function exitApp() {
-    // 降级模式（无法原地写盘）时，未下载的改动会丢失，提示语要更明确
-    const unsavedFallback = state.fallback && state.saveStatus !== 'saved';
-    const msg = unsavedFallback
-      ? 'Exit Home Ledger? Your latest changes have not been downloaded and will be lost.'
-      : 'Exit Home Ledger? Unsaved changes will be written to the ledger file first.';
-    const ok = await askConfirm(msg, { title: 'Exit Home Ledger', confirmText: 'Exit' });
+    const ok = await askConfirm('Exit Home Ledger? Unsaved changes will be saved first.',
+      { title: 'Exit Home Ledger', confirmText: 'Exit' });
     if (!ok) return;
-    // 有句柄且存在未保存改动时先落盘；落盘失败则不退出，避免丢数据
-    if (state.saveStatus !== 'saved' && rt.handle) {
+    // 退出前尽力落盘（FS 模式写原文件 / 降级模式写浏览器暂存）；失败则不退出，避免丢数据
+    if (state.saveStatus !== 'saved') {
       const saved = await persistNow().catch(() => false);
       if (!saved) {
-        toast('Could not save before exit. Your changes are still open — try "Fix location" first.', 'error');
+        toast('Could not save before exit. Your changes are still open — try again.', 'error');
         return;
       }
     }
@@ -2841,6 +2991,7 @@ window.HL = window.HL || {};
     const bytes = await HL.crypto.encryptLedgerWithKey(state.ledger, newKey, newSalt, newHint || '');
     // 3) 先写盘成功再切换运行时密钥（失败则保持旧密码不变，数据一致）
     if (rt.handle) await HL.files.writeHandle(rt.handle, bytes);
+    else await HL.idb.setAutosave(bytes, state.fileName); // 降级模式：同步更新浏览器暂存，否则下次恢复仍要旧密码
     rt.key = newKey;
     rt.salt = newSalt;
     rt.hint = newHint || '';
@@ -2880,13 +3031,6 @@ window.HL = window.HL || {};
     await HL.idb.clearRemember().catch(() => {});
     state.rememberEnabled = false;
     toast('Remember me turned off. You will be asked for the password next time.', 'info');
-  }
-
-  /** 导出 JSON 备份（明文！下载前由界面二次警告） */
-  function exportJsonBackup() {
-    const json = JSON.stringify(state.ledger, null, 2);
-    const d = U.todayISO().replace(/-/g, '');
-    HL.files.downloadBytes(new TextEncoder().encode(json), 'HomeLedger_Backup_' + d + '.json', 'application/json');
   }
 
   /** 从历史快照恢复：用当前密钥解密快照并整体替换内存账本，随后写盘 */
@@ -3038,10 +3182,31 @@ window.HL = window.HL || {};
     return out;
   }
 
+  /**
+   * 多个月份的收支汇总（一次遍历按月分桶，O(交易数)）：
+   * 供报表区间逐月图表使用，避免逐月各扫一遍全量交易（O(月数×交易数)）。
+   * @param {string[]} ymKeys 月份键列表
+   * @returns {Map<string, {income, expense}>} 键为不存在的月份时值为全 0
+   */
+  function monthsTotalsMap(ymKeys) {
+    const L = state.ledger;
+    const map = new Map();
+    for (const ym of new Set(ymKeys)) map.set(ym, { income: 0, expense: 0 });
+    for (const t of L ? L.transactions : []) {
+      const m = map.get(U.monthKey(t.date));
+      if (!m) continue;
+      if (t.type === 'income') m.income += t.amount;
+      else if (t.type === 'expense') m.expense += t.amount;
+    }
+    for (const m of map.values()) { m.income = U.round2(m.income); m.expense = U.round2(m.expense); }
+    return map;
+  }
+
   /** 12 个月收支序列 [{ym, income, expense}]（柱状图数据） */
   function monthsIncomeExpense(ymKeys) {
+    const map = monthsTotalsMap(ymKeys);
     return ymKeys.map((ym) => {
-      const t = monthTotals(ym);
+      const t = map.get(ym) || { income: 0, expense: 0 };
       return { ym, income: t.income, expense: t.expense };
     });
   }
@@ -3110,7 +3275,7 @@ window.HL = window.HL || {};
 
   // 导出 API
   HL.store = {
-    state, boot, continueWithSavedHandle, openExisting,
+    state, boot, continueWithSavedHandle, openExisting, continueFallbackCopy,
     prepareNewLedger, commitNewLedger,
     unlock, lockNow, relocateFile, persistNow, saveByDownload,
     enableRemember, disableRemember, changePassword,
@@ -3120,8 +3285,8 @@ window.HL = window.HL || {};
     setBudget, setBudgetOverride, removeBudget,
     addCategory, deleteCategory, setCurrency, setTheme,
     exitApp,
-    exportJsonBackup, restoreSnapshot,
-    accountBalance, netWorth, assetsAndDebts, monthTotals, spentByCat,
+    restoreSnapshot,
+    accountBalance, netWorth, assetsAndDebts, monthTotals, spentByCat, monthsTotalsMap,
     budgetRow, budgetRows, upcomingBills, billStatus, annualBills,
     last12Months, monthsIncomeExpense, payees,
     toast, askConfirm, answerConfirm, startIdleWatch
@@ -3136,6 +3301,28 @@ window.HL = window.HL || {};
  * ===================================================================== */
 (function () {
   'use strict';
+
+  /**
+   * AutoSize mixin — 图表画布自适应容器尺寸
+   * 用 ResizeObserver 实时测量根容器（.chart-wrap，模板中 ref="wrap"）的实际宽高，
+   * 组件的绘图几何据此动态计算，SVG viewBox 与元素尺寸保持同比例，
+   * 从而让图表随等高卡片的高度伸缩，不再出现"卡片高、图表矮、下方留白"。
+   */
+  const AutoSize = {
+    data() { return { wrapW: 650, wrapH: 190 }; },
+    mounted() {
+      // 初始测量 + 持续观察（等高卡片拉伸、窗口缩放、布局切换都会触发）
+      this._ro = new ResizeObserver((entries) => {
+        const r = entries[0].contentRect;
+        if (r.width > 60 && r.height > 60) {
+          this.wrapW = Math.round(r.width);
+          this.wrapH = Math.round(r.height);
+        }
+      });
+      if (this.$refs.wrap) this._ro.observe(this.$refs.wrap);
+    },
+    beforeUnmount() { if (this._ro) this._ro.disconnect(); }
+  };
 
   /** 极坐标转直角坐标（donut 扇区路径计算用） */
   function polar(cx, cy, r, deg) {
@@ -3162,9 +3349,23 @@ window.HL = window.HL || {};
    */
   const DonutChart = {
     name: 'DonutChart',
-    props: { items: { type: Array, default: () => [] }, centerLabel: String, centerValue: String },
-    data() { return { tip: null, hover: -1, SIZE: 210 }; },
+    mixins: [AutoSize],
+    props: {
+      items: { type: Array, default: () => [] },
+      centerLabel: String,
+      centerValue: String,
+      emptyText: { type: String, default: 'No expenses recorded this month.' }
+    },
+    data() { return { tip: null, hover: -1 }; },
     computed: {
+      /** 画布边长：取容器宽高的较小值（保证圆形完整显示），并限制合理范围 */
+      SIZE() { return Math.max(150, Math.min(this.wrapW, this.wrapH)); },
+      /** 圆心与内外半径：随画布边长等比缩放（内径约为外径的 69%，保持原比例观感） */
+      donut() {
+        const c = this.SIZE / 2;
+        const rOut = c - 9;
+        return { c, rOut, rIn: rOut * 0.6875 };
+      },
       /** 总量（用于份额计算；无数据时为 0） */
       total() { return this.items.reduce((a, i) => a + i.value, 0); },
       /** 计算好的扇区几何：{path, color, pct, gap 起始角} */
@@ -3172,11 +3373,12 @@ window.HL = window.HL || {};
         const out = [];
         let deg = 0;
         const GAP = this.items.length > 1 ? 1.6 : 0; // 扇区间留缝（度），更精致
+        const d = this.donut;
         for (const it of this.items) {
           const span = this.total > 0 ? (it.value / this.total) * 360 : 0;
           if (span <= 0) continue;
           out.push({
-            path: arcPath(105, 105, 96, 66, deg + GAP / 2, Math.max(0.5, span - GAP)),
+            path: arcPath(d.c, d.c, d.rOut, d.rIn, deg + GAP / 2, Math.max(0.5, span - GAP)),
             color: it.color,
             pct: Math.round((it.value / this.total) * 100),
             label: it.label,
@@ -3202,16 +3404,16 @@ window.HL = window.HL || {};
       onLeave() { this.tip = null; this.hover = -1; }
     },
     template: `
-<div class="chart-wrap">
-  <svg v-if="arcs.length" :viewBox="'0 0 ' + SIZE + ' ' + SIZE" style="width:100%;display:block">
+<div class="chart-wrap" ref="wrap">
+  <svg v-if="arcs.length" :viewBox="'0 0 ' + SIZE + ' ' + SIZE" style="width:100%;height:100%;display:block">
     <path v-for="(a,i) in arcs" :key="i" :d="a.path" :fill="a.color"
       :opacity="hover === -1 || hover === i ? 1 : 0.35"
       style="transition:opacity .12s;cursor:pointer"
       @mousemove="onHover(a,$event)" @mouseleave="onLeave"/>
-    <text x="105" y="100" text-anchor="middle" class="donut-center-label">{{ centerLabel }}</text>
-    <text x="105" y="122" text-anchor="middle" class="donut-center-value">{{ centerValue }}</text>
+    <text :x="donut.c" :y="donut.c - 5" text-anchor="middle" class="donut-center-label">{{ centerLabel }}</text>
+    <text :x="donut.c" :y="donut.c + 17" text-anchor="middle" class="donut-center-value">{{ centerValue }}</text>
   </svg>
-  <div v-else class="empty" style="padding:50px 20px">No expenses recorded this month.</div>
+  <div v-else class="empty" style="padding:50px 20px">{{ emptyText }}</div>
   <div v-if="tip" class="chart-tip" :style="{ left: tip.x + '%', top: tip.y + '%' }">
     <b>{{ tip.label }}</b><br>{{ $money(tip.value) }} &middot; {{ tip.pct }}%
   </div>
@@ -3225,25 +3427,67 @@ window.HL = window.HL || {};
    */
   const BarsChart = {
     name: 'BarsChart',
+    mixins: [AutoSize],
     props: { data: { type: Array, default: () => [] } },
     data() { return { tip: null }; },
     computed: {
-      /** y 轴最大值（取收/支较大者，向上取整到千位，保证柱高比例协调） */
-      max() {
-        const m = Math.max(1, ...this.data.map((d) => Math.max(d.income, d.expense)));
-        const pow = Math.pow(10, String(Math.round(m)).length - 1);
-        return Math.ceil(m / pow * 1.1) * pow / 1;
+      /** 数据最大值（收/支较大者，至少 1 兜底，避免除零） */
+      rawMax() {
+        return Math.max(1, ...this.data.map((d) => Math.max(d.income, d.expense)));
       },
-      /** 绘图区几何常量 */
-      geo() { return { x0: 44, y0: 12, w: 596, h: 150, base: 162 }; }
+      /**
+       * y 轴顶部与步长：在 1/2/2.5/5 × 10ⁿ 的"漂亮"步长中，
+       * 挑选步数适中（2~5 段）且顶部最贴近数据的组合，
+       * 保证刻度线都是可读的整数金额（如 0/5/10/15/20），不再出现 0/7/13/20。
+       */
+      axis() {
+        const m = this.rawMax;
+        let best = null;
+        for (let e = 0; e <= 9; e++) {
+          const b = Math.pow(10, e);
+          for (const f of [1, 2, 2.5, 5]) {
+            const st = f * b;
+            const top = Math.ceil(m / st) * st;
+            const n = Math.round(top / st);
+            if (n >= 2 && n <= 5 && (!best || top < best.top)) best = { top, step: st };
+          }
+        }
+        // 极小数据（如全为 0/1）的兜底：步长 1、顶为向上取整
+        return best || { top: Math.ceil(m), step: 1 };
+      },
+      /** y 轴刻度值数组：从 0 到 top，按 step 均匀分布（已消除浮点尾差） */
+      tickLines() {
+        const { top, step } = this.axis;
+        const out = [];
+        for (let v = 0; v <= top + 1e-9; v += step) out.push(Math.round(v * 100) / 100);
+        return out;
+      },
+      /** 绘图区几何：随容器实际宽高动态计算（卡片等高拉伸时图表随之变高） */
+      geo() {
+        const padL = 46, padR = 6, padT = 10, axisH = 22;
+        const h = Math.max(60, this.wrapH - padT - axisH);
+        return { x0: padL, w: Math.max(80, this.wrapW - padL - padR), y0: padT, h, base: padT + h };
+      }
     },
     methods: {
-      /** 单柱矩形几何：value->高度 映射 */
-      barX(i, half) { const g = this.geo; const slot = g.w / this.data.length; return g.x0 + slot * i + (half ? slot / 2 + 1.5 : 4); },
-      barW() { const slot = this.geo.w / this.data.length; return Math.max(6, slot / 2 - 5); },
-      barH(v) { return Math.max(0, (v / this.max) * this.geo.h); },
-      /** y 轴刻度线（4 条均分） */
-      gridLine(i) { const g = this.geo; return { y: g.base - (g.h / 3) * i, v: this.max / 3 * i }; },
+      /**
+       * 单柱矩形几何：柱宽固定 14px（视觉恒定，不随查询区间月份数变化）；
+       * 两柱以每月占位的中心为基准并排（收入在左、支出在右）。
+       * 仅当区间很长导致占位放不下时才按占位宽度略缩，避免相邻月份柱体重叠。
+       */
+      barX(i, half) {
+        const g = this.geo;
+        const slot = g.w / this.data.length;
+        const cx = g.x0 + slot * (i + 0.5);
+        return half ? cx + 1.5 : cx - this.barW() - 1.5;
+      },
+      barW() { return Math.max(6, Math.min(14, this.geo.w / this.data.length / 2 - 3)); },
+      barH(v) { return Math.max(0, (v / this.axis.top) * this.geo.h); },
+      /** 刻度数值格式：千位以上用短格式（$1.2K），其余去掉多余的尾零并带 $ 前缀 */
+      fmtTick(v) {
+        if (v >= 1000) return '$' + this.$numShort(v);
+        return '$' + String(Math.round(v * 100) / 100);
+      },
       /** hover 整月：展示收/支/净 */
       onHover(d, ev) {
         const rect = ev.currentTarget.closest('.chart-wrap').getBoundingClientRect();
@@ -3256,13 +3500,13 @@ window.HL = window.HL || {};
       onLeave() { this.tip = null; }
     },
     template: `
-<div class="chart-wrap">
-  <svg viewBox="0 0 650 190" style="width:100%;display:block">
-    <g v-for="(gl,i) in [3,2,1,0]" :key="'g'+i">
-      <line :x1="geo.x0" :x2="geo.x0 + geo.w" :y1="gridLine(gl).y" :y2="gridLine(gl).y"
+<div class="chart-wrap" ref="wrap">
+  <svg :viewBox="'0 0 ' + wrapW + ' ' + wrapH" style="width:100%;height:100%;display:block">
+    <g v-for="(v,i) in tickLines" :key="'g'+i">
+      <line v-if="v > 0" :x1="geo.x0" :x2="geo.x0 + geo.w" :y1="geo.base - barH(v)" :y2="geo.base - barH(v)"
         stroke="#e4e8ee" stroke-width="1" stroke-dasharray="3 4"/>
-      <text :x="geo.x0 - 8" :y="gridLine(gl).y + 4" text-anchor="end" font-size="10" fill="#8492a6">
-        {{ $numShort(gridLine(gl).v) }}
+      <text :x="geo.x0 - 8" :y="geo.base - barH(v) + 4" text-anchor="end" font-size="10" fill="#8492a6">
+        {{ fmtTick(v) }}
       </text>
     </g>
     <g v-for="(d,i) in data" :key="d.ym">
@@ -3270,8 +3514,8 @@ window.HL = window.HL || {};
         rx="3" fill="#16a34a" opacity="0.9"/>
       <rect :x="barX(i,true)" :y="geo.base - barH(d.expense)" :width="barW()" :height="barH(d.expense)"
         rx="3" fill="#ef4444" opacity="0.9"/>
-      <text :x="barX(i,false) + barW()" :y="geo.base + 16" text-anchor="middle" font-size="10" fill="#8492a6">{{ $monthShort(d.ym) }}</text>
-      <rect :x="geo.x0 + (geo.w / data.length) * i" y="6" :width="geo.w / data.length" :height="geo.h + 16"
+      <text :x="barX(i,false) + barW()" :y="geo.base + 15" text-anchor="middle" font-size="10" fill="#8492a6">{{ $monthShort(d.ym) }}</text>
+      <rect :x="geo.x0 + (geo.w / data.length) * i" :y="geo.y0 - 4" :width="geo.w / data.length" :height="geo.h + 18"
         fill="transparent" style="cursor:pointer" @mousemove="onHover(d,$event)" @mouseleave="onLeave"/>
     </g>
     <line :x1="geo.x0" :x2="geo.x0 + geo.w" :y1="geo.base" :y2="geo.base" stroke="#cdd4de" stroke-width="1"/>
@@ -3284,7 +3528,104 @@ window.HL = window.HL || {};
 </div>`
   };
 
-  HL.charts = { DonutChart, BarsChart };
+  /**
+   * 净现金流折线图组件（报表页用）
+   * props: data [{ym, net}]，net 为当月净现金流（收入-支出，可正可负）
+   * 视觉：靛蓝折线 + 数据点 + 中间零基虚线；hover 数据点弹出金额提示。
+   * y 轴采用对称范围（±最大绝对值），保证零线居中、正负方向一目了然。
+   */
+  const NetLineChart = {
+    name: 'NetLineChart',
+    mixins: [AutoSize],
+    props: { data: { type: Array, default: () => [] } },
+    data() { return { tip: null }; },
+    computed: {
+      /**
+       * 对称值域上限：向上取整到"漂亮"的步长（1/2/2.5/5 × 10ⁿ），
+       * 零线居中、上下端点刻度都是可读整数金额（如 ±12），不再出现 ±1.15 这类碎数。
+       */
+      limit() {
+        const m = Math.max(1, ...this.data.map((d) => Math.abs(d.net)));
+        let best = null;
+        for (let e = 0; e <= 9; e++) {
+          const b = Math.pow(10, e);
+          for (const f of [1, 2, 2.5, 5]) {
+            const st = f * b;
+            const top = Math.ceil(m / st) * st;
+            const n = Math.round(top / st);
+            if (n >= 2 && n <= 5 && (!best || top < best)) best = top;
+          }
+        }
+        return best || Math.ceil(m); // 极小数据兜底
+      },
+      /** 绘图区几何：随容器实际宽高动态计算，零线在绘图区垂直居中 */
+      geo() {
+        const padL = 46, padR = 6, padT = 12, axisH = 22;
+        const h = Math.max(60, this.wrapH - padT - axisH);
+        const base = padT + h;
+        return { x0: padL, w: Math.max(80, this.wrapW - padL - padR), h, base, mid: padT + h / 2 };
+      },
+      /** 折线顶点序列：{x, y, d(数据项)} */
+      pts() {
+        const g = this.geo;
+        const n = this.data.length || 1;
+        return this.data.map((d, i) => ({
+          x: g.x0 + (g.w / n) * (i + 0.5),
+          y: g.mid - (d.net / this.limit) * (g.h / 2),
+          d
+        }));
+      },
+      /** SVG polyline 的 points 字符串 */
+      lineStr() { return this.pts.map((p) => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' '); }
+    },
+    methods: {
+      /** 值 -> y 坐标（零线刻度标签用） */
+      yOf(v) { return this.geo.mid - (v / this.limit) * (this.geo.h / 2); },
+      /** 刻度数值格式：千位以上用短格式，其余去尾零并带 $ 前缀 */
+      fmtTick(v) {
+        if (Math.abs(v) >= 1000) return '$' + this.$numShort(v);
+        return '$' + String(Math.round(v * 100) / 100);
+      },
+      /** hover 数据点：显示月份与净额 */
+      onHover(d, ev) {
+        const rect = ev.currentTarget.closest('.chart-wrap').getBoundingClientRect();
+        this.tip = {
+          x: ((ev.clientX - rect.left) / rect.width) * 100,
+          y: ((ev.clientY - rect.top) / rect.height) * 100,
+          ym: d.ym, net: d.net
+        };
+      },
+      onLeave() { this.tip = null; }
+    },
+    template: `
+<div class="chart-wrap" ref="wrap">
+  <svg :viewBox="'0 0 ' + wrapW + ' ' + wrapH" style="width:100%;height:100%;display:block">
+    <!-- 零基虚线（正负分界） -->
+    <line :x1="geo.x0" :x2="geo.x0 + geo.w" :y1="geo.mid" :y2="geo.mid"
+      stroke="#cdd4de" stroke-width="1" stroke-dasharray="4 4"/>
+    <text :x="geo.x0 - 8" :y="geo.mid + 4" text-anchor="end" font-size="10" fill="#8492a6">$0</text>
+    <!-- 上下边界刻度 -->
+    <text :x="geo.x0 - 8" :y="yOf(limit) + 4" text-anchor="end" font-size="10" fill="#8492a6">{{ fmtTick(limit) }}</text>
+    <text :x="geo.x0 - 8" :y="yOf(-limit) + 4" text-anchor="end" font-size="10" fill="#8492a6">{{ fmtTick(-limit) }}</text>
+    <!-- 折线与数据点 -->
+    <polyline v-if="pts.length" :points="lineStr" fill="none" stroke="#4f46e5" stroke-width="2.5"
+      stroke-linecap="round" stroke-linejoin="round"/>
+    <g v-for="(p,i) in pts" :key="p.d.ym">
+      <circle :cx="p.x" :cy="p.y" r="4" fill="#4f46e5" stroke="#ffffff" stroke-width="1.5"/>
+      <text :x="p.x" :y="geo.base + 16" text-anchor="middle" font-size="10" fill="#8492a6">{{ $monthShort(p.d.ym) }}</text>
+      <!-- 透明命中区（扩大 hover 范围） -->
+      <circle :cx="p.x" :cy="p.y" r="12" fill="transparent" style="cursor:pointer"
+        @mouseenter="onHover(p.d,$event)" @mouseleave="onLeave"/>
+    </g>
+  </svg>
+  <div v-if="tip" class="chart-tip" :style="{ left: tip.x + '%', top: tip.y + '%' }">
+    <b>{{ $monthLong(tip.ym) }}</b><br>
+    Net&nbsp;<span :style="{ color: tip.net >= 0 ? '#16a34a' : '#ef4444' }">{{ $money(tip.net) }}</span>
+  </div>
+</div>`
+  };
+
+  HL.charts = { DonutChart, BarsChart, NetLineChart };
 })();
 
 /* =====================================================================
@@ -3411,7 +3752,111 @@ window.HL = window.HL || {};
 </x-modal>`
   };
 
-  HL.components = { XIcon, XModal, Toaster, ConfirmHost };
+  /**
+   * PickerMixin — 日期类输入组件的公共行为
+   * 点击输入框任意位置即弹出浏览器原生选择面板（showPicker API），
+   * 不再需要精确点中右侧的小日历图标；
+   * 不支持该 API 的浏览器（如 Firefox）静默降级为原生输入行为。
+   */
+  const PickerMixin = {
+    methods: {
+      /** 点击输入框任意位置触发系统选择面板（无用户手势等被拒场景静默忽略） */
+      openPicker() {
+        const el = this.$refs.inp;
+        if (el && typeof el.showPicker === 'function') {
+          try { el.showPicker(); } catch (e) { /* ignore */ }
+        }
+      }
+    }
+  };
+
+  /**
+   * MonthInput（x-month）— 月份选择输入框，替代裸 <input type="month">。
+   * 解决两个体验问题：
+   *  1. Chrome/Edge：点击输入框任意位置即弹出日期选择面板（showPicker），
+   *     不再需要精确点中右侧日历图标；
+   *  2. Firefox/Safari：不支持 month 类型（连日历图标都没有），降级为普通文本框，
+   *     显示 YYYY-MM 格式占位提示，允许手敲输入并做格式校验（非法输入不生效、
+   *     失焦自动回滚到当前值）。
+   * 用法：<x-month v-model="fromYm"></x-month>（外部 style/class 自动继承到根元素）
+   */
+  const MonthInput = {
+    name: 'MonthInput',
+    mixins: [PickerMixin],
+    props: { modelValue: { type: String, default: '' } },
+    emits: ['update:modelValue'],
+    methods: {
+      /**
+       * 输入变化：仅当值是合法的 YYYY-MM（月份 01-12）才向外同步 v-model，
+       * 避免 Firefox 手敲半截内容污染区间状态
+       */
+      onInput(e) {
+        const v = e.target.value;
+        if (/^\d{4}-(0[1-9]|1[0-2])$/.test(v)) this.$emit('update:modelValue', v);
+      },
+      /** 失焦时若输入非法，回滚显示为当前绑定值 */
+      onBlur(e) {
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value)) e.target.value = this.modelValue || '';
+      }
+    },
+    template: `
+<input ref="inp" class="field-input" type="month" :value="modelValue" placeholder="YYYY-MM"
+  @click="openPicker" @input="onInput" @blur="onBlur">`
+  };
+
+  /**
+   * DateInput（x-date）— 日期选择输入框（type="date"）。
+   * Chrome/Edge：点击输入框任意位置即弹出日期选择面板（showPicker），
+   * 不再需要精确点中日历图标；Firefox：保留原生日期字段（可直接分段编辑）。
+   * 值天然是 YYYY-MM-DD 格式，合法性由浏览器保证，无需额外校验。
+   * 用法：<x-date v-model="form.date"></x-date>（外部 style/class 自动继承）
+   */
+  const DateInput = {
+    name: 'DateInput',
+    mixins: [PickerMixin],
+    props: { modelValue: { type: String, default: '' } },
+    emits: ['update:modelValue'],
+    template: `
+<input ref="inp" class="field-input" type="date" :value="modelValue"
+  @click="openPicker" @input="$emit('update:modelValue', $event.target.value)">`
+  };
+
+  /**
+   * MonthNav（x-month-nav）— "‹ January 2025 ›" 月份导航条
+   * 左右箭头逐月切换；点击中间的月份文字可在面板中直接选择年月
+   * （Chrome/Edge 弹出原生年月选择面板，可点年份直接跳；Firefox 无 showPicker
+   * 时降级为仅箭头翻页）。隐藏的原生 month input 负责承载面板与键盘输入。
+   * 用法：<x-month-nav v-model="ym"></x-month-nav>
+   */
+  const MonthNav = {
+    name: 'MonthNav',
+    mixins: [PickerMixin],
+    props: { modelValue: { type: String, default: '' } },
+    emits: ['update:modelValue'],
+    computed: {
+      /** 月份长名（如 January 2025） */
+      label() { return HL.util.fmtMonthLong(this.modelValue); }
+    },
+    methods: {
+      /** 箭头翻页：dir = -1 上月 / 1 下月 */
+      go(dir) { this.$emit('update:modelValue', HL.util.addMonthKey(this.modelValue, dir)); },
+      /** 面板/键盘选择：把合法的新月份同步给父组件 */
+      onPick(e) { if (e.target.value) this.$emit('update:modelValue', e.target.value); }
+    },
+    template: `
+<div class="month-nav">
+  <button class="icon-btn" @click="go(-1)"><x-icon name="chev-l"/></button>
+  <div class="mn-mid" @click="openPicker" title="Click to pick a month">
+    <b>{{ label }}</b>
+    <input ref="inp" type="month" :value="modelValue"
+      style="position:absolute;left:50%;top:50%;width:1px;height:1px;opacity:0;border:0;padding:0"
+      @input="onPick">
+  </div>
+  <button class="icon-btn" @click="go(1)"><x-icon name="chev-r"/></button>
+</div>`
+  };
+
+  HL.components = { XIcon, XModal, Toaster, ConfirmHost, MonthInput, DateInput, MonthNav };
 })();
 
 </script>
@@ -3425,6 +3870,26 @@ window.HL = window.HL || {};
 HL.views = HL.views || {};
 HL.views.welcome = {
   name: 'WelcomeView',
+  data() {
+    return {
+      /** 降级模式：浏览器固定暂存里的上次账本信息 { name, savedAtText }，没有则为 null */
+      fallbackCopy: null
+    };
+  },
+  /** 降级模式下预查浏览器暂存：有上次自动保存的账本时展示"继续"卡片 */
+  async created() {
+    if (!this.s.fallback) return;
+    try {
+      const rec = await HL.idb.getAutosave();
+      if (rec && rec.data) {
+        const t = new Date(rec.savedAt || Date.now());
+        this.fallbackCopy = {
+          name: rec.name || 'FamilyLedger.hledger',
+          savedAtText: new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(t)
+        };
+      }
+    } catch (e) { /* 暂存不可用时静默忽略，用户仍可手动选文件 */ }
+  },
   computed: {
     /** 快捷访问 store 状态 */
     s() { return this.$s; },
@@ -3434,6 +3899,8 @@ HL.views.welcome = {
   methods: {
     /** 继续上次账本：触发句柄重新授权流程 */
     cont() { HL.store.continueWithSavedHandle(); },
+    /** 降级模式：从浏览器固定暂存恢复上次账本（无需重新选择文件） */
+    contCopy() { HL.store.continueFallbackCopy(); },
     /** 进入新建向导 */
     createNew() {
       HL.store.state.wizardStep = 1;
@@ -3496,8 +3963,19 @@ HL.views.welcome = {
 
       <div class="fallback-banner" v-if="s.fallback">
         <x-icon name="alert"/>
-        <span>This browser doesn't support direct file access. You can still use Home Ledger &mdash; your ledger is saved by downloading the encrypted file, and re-opened by picking it again.</span>
+        <span>Your current browser does not support direct access to your local ledger file. Data modifications are automatically saved encrypted in your browser. Once you enter the system, you may download a file copy at any time. (Note: The copy will not automatically sync with the latest data). We advise you not to clear your browser cache, otherwise, you may lose your latest data. For a better experience with automatic syncing of updates to the ledger file on your computer, please launch this app in Chrome or Edge.</span>
       </div>
+
+      <!-- 降级模式：浏览器暂存里有上次账本时，一键继续（仍需输入主密码解锁） -->
+      <button v-if="s.fallback && fallbackCopy" class="continue-card" @click="contCopy">
+        <span class="cc-icon"><x-icon name="restore" :size="18"/></span>
+        <span style="flex:1">
+          <b>Continue with the in-browser copy</b>
+          <span>{{ fallbackCopy.name }} &middot; saved {{ fallbackCopy.savedAtText }}</span>
+        </span>
+        <x-icon name="chev-r"/>
+      </button>
+      <template v-if="s.fallback && fallbackCopy"><div class="auth-divider">or</div></template>
 
       <button v-if="showContinue" class="continue-card" @click="cont">
         <span class="cc-icon"><x-icon name="clock" :size="18"/></span>
@@ -3780,7 +4258,7 @@ HL.views.unlock = {
     <i class="fx-ic" style="left:35%;top:84%;width:22px;opacity:.10;animation-duration:8s;animation-delay:-2s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5L21 20H3z"/></svg></i>
     <i class="fx-ic alt" style="left:58%;top:78%;width:26px;opacity:.11;animation-duration:9s;animation-delay:-6s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9"/><circle cx="12" cy="12" r="4.2"/><path d="M12 3v4.6"/></svg></i>
   </div>
-  <div class="auth-card">
+  <div class="auth-card slim">
     <div class="auth-panel">
       <div class="lock-badge" v-if="isLocked"><x-icon name="lock" :size="26"/></div>
       <div class="auth-logo" style="margin-bottom:18px">
@@ -3845,7 +4323,7 @@ HL.views.shell = {
     go(v) { this.s.view = v; },
     /** 手动锁定（失败时 toast 提示，不锁） */
     async lock() { await HL.store.lockNow(''); },
-    /** 顶栏"下载保存"（降级模式专用） */
+    /** 顶栏"导出副本"（降级模式专用：自动保存已进浏览器暂存，此按钮导出文件副本） */
     downloadSave() { HL.store.saveByDownload(); },
     /** 保存失败后的"重新定位文件" */
     fixLocation() { HL.store.relocateFile(); },
@@ -3899,8 +4377,8 @@ HL.views.shell = {
       <span class="save-dot" :class="s.saveStatus" :title="saveText"></span>
       <span style="font-size:12px" class="text-muted">{{ saveText }}</span>
       <button v-if="s.saveStatus === 'error'" class="btn btn-sm btn-danger" @click="fixLocation">Fix location</button>
-      <button v-if="s.fallback" class="btn btn-sm" :disabled="s.saveStatus === 'saved'" @click="downloadSave">
-        <x-icon name="download"/> Download save
+      <button v-if="s.fallback" class="btn btn-sm" @click="downloadSave">
+        <x-icon name="download"/> Download a copy
       </button>
       <div class="spacer"></div>
       <span style="font-size:12px" class="text-muted">{{ $dateLong(new Date()) }}</span>
@@ -3971,14 +4449,15 @@ HL.views.dashboard = {
     accColor(type) {
       return { checking: '#4f46e5', savings: '#0d9488', credit: '#dc2626', cash: '#d97706' }[type] || '#64748b';
     },
-    /** 一键"标记已付"（Dashboard 快捷操作，金额/账户取账单默认） */
+    /** 一键"标记已付"（Dashboard 快捷操作，金额/账户取账单默认，付款日=今天，
+     *  与 Bills 页"标记已付"弹窗同口径） */
     async quickPay(u) {
       const ok = await HL.store.askConfirm(
-        'Mark "' + u.bill.name + '" as paid for ' + this.$money(u.bill.amount) + ' from ' +
+        'Mark "' + u.bill.name + '" as paid today for ' + this.$money(u.bill.amount) + ' from ' +
         (this.L.accounts.find((a) => a.id === u.bill.accountId) || { name: '?' }).name + '?',
         { title: 'Mark as Paid', confirmText: 'Mark as Paid' }
       );
-      if (ok) HL.store.markBillPaid(u.bill.id, {});
+      if (ok) HL.store.markBillPaid(u.bill.id, { date: HL.util.todayISO() });
     },
     go(v) { this.$s.view = v; }
   },
@@ -4095,7 +4574,7 @@ HL.views.dashboard = {
       <div class="card card-pad">
         <div class="card-title" style="margin-bottom:10px">Your data, your rules</div>
         <div class="secure-row" style="margin-bottom:8px"><x-icon name="shield"/>Ledger file is encrypted with AES-256-GCM</div>
-        <div class="secure-row" style="margin-bottom:8px"><x-icon name="check"/>Automatic snapshots keep the last 3 saves</div>
+        <div class="secure-row" style="margin-bottom:8px"><x-icon name="check"/>Automatic snapshots let you roll back recent mistakes</div>
         <div class="secure-row"><x-icon name="key"> </x-icon>Change password or export backups in Settings</div>
       </div>
     </div>
@@ -4142,6 +4621,22 @@ HL.views.bills = {
     annual() { return HL.store.annualBills(); },
     /** 可选账户（未归档）与支出分类 */
     accounts() { return this.L.accounts.filter((a) => !a.archived); },
+    /**
+     * "标记已付"弹窗的账户下拉选项：
+     * 在可用账户基础上，把账单原挂账户补进来（即使已归档），
+     * 避免下拉因缺少该选项而显示空白，导致付款静默记到看不见的账户上。
+     * 归档账户在名称后标注 (archived) 提示用户酌情更换。
+     */
+    payAccounts() {
+      const list = this.accounts.slice();
+      if (this.payTarget) {
+        const src = this.L.accounts.find((a) => a.id === this.payTarget.accountId);
+        if (src && src.archived && !list.some((a) => a.id === src.id)) {
+          list.push(Object.assign({}, src, { name: src.name + ' (archived)' }));
+        }
+      }
+      return list;
+    },
     expCats() { return this.L.categories.filter((c) => c.group !== 'Income'); }
   },
   methods: {
@@ -4154,8 +4649,17 @@ HL.views.bills = {
     freqLabel(f) { return HL.util.freqLabel[f] || f; },
     /** 频率选项表（新增/编辑弹窗下拉） */
     freqOptions() { return HL.util.freqLabel; },
-    /** 打开新增/编辑账单弹窗 */
-    openBill(b) {
+    /** 打开新增/编辑账单弹窗（新增前校验：至少要有一个可付款账户，否则引导去 Accounts 页创建） */
+    async openBill(b) {
+      // 无账户拦截：账单需要"Pay from"账户。仅拦截"新增"（编辑时账户必然已存在）
+      if (!b && !this.accounts.length) {
+        const go = await HL.store.askConfirm(
+          'You need at least one account before adding a bill. Go to Accounts and create one?',
+          { confirmText: 'Go to Accounts' }
+        );
+        if (go) this.$s.view = 'accounts'; // 确认后跳转到 Accounts 页
+        return;
+      }
       this.editId = b ? b.id : null;
       this.form = b ? Object.assign({}, b) : {
         name: '', payee: '', categoryId: this.expCats[0] ? this.expCats[0].id : '',
@@ -4175,13 +4679,14 @@ HL.views.bills = {
       else HL.store.addBill(this.form);
       this.modal = null;
     },
-    /** 打开"标记已付"弹窗（预填账单金额/账户与到期日） */
+    /** 打开"标记已付"弹窗（预填账单金额/账户；日期统一预填今天——与 Dashboard 快捷 Paid 同口径，
+     *  "实际付款日"语义，避免未来到期日预填产生未来日期的交易） */
     openPay(u) {
       this.payTarget = u.bill;
       this.payForm = {
         amount: u.bill.amount,
         accountId: u.bill.accountId,
-        date: u.bill.nextDueDate < HL.util.todayISO() ? HL.util.todayISO() : u.bill.nextDueDate
+        date: HL.util.todayISO()
       };
       this.modal = 'pay';
     },
@@ -4291,7 +4796,7 @@ HL.views.bills = {
     </div>
     <div class="field-row">
       <div class="field"><label class="field-label">Next due date</label>
-        <input class="field-input" type="date" v-model="form.nextDueDate"></div>
+        <x-date v-model="form.nextDueDate"></x-date></div>
       <div class="field"><label class="field-label">Remind me (days before)</label>
         <input class="field-input" type="number" min="0" max="30" v-model.number="form.reminderDays"></div>
     </div>
@@ -4312,12 +4817,12 @@ HL.views.bills = {
         <div class="field-hint" v-if="payTarget.isEstimate">This bill is an estimate — enter the actual amount.</div>
       </div>
       <div class="field"><label class="field-label">Paid on</label>
-        <input class="field-input" type="date" v-model="payForm.date"></div>
+        <x-date v-model="payForm.date"></x-date></div>
     </div>
     <div class="field">
       <label class="field-label">Pay from</label>
       <select class="field-select" v-model="payForm.accountId">
-        <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
+        <option v-for="a in payAccounts" :key="a.id" :value="a.id">{{ a.name }}</option>
       </select>
     </div>
     <template #foot>
@@ -4361,12 +4866,17 @@ HL.views.transactions = {
         .filter((t) => !q || (t.payee || '').toLowerCase().includes(q) || (t.memo || '').toLowerCase().includes(q))
         .sort(U.byDateDesc);
     },
-    /** 当月（筛选后）净额 */
+    /**
+     * 当月（筛选后）净额。按账户筛选时以该账户视角计：转入为正、转出为负，
+     * 保证列表中每行金额之和 = Net；不筛账户时转账是内部流动，不计入。
+     */
     net() {
       let n = 0;
+      const acc = this.fAcc;
       for (const t of this.rows) {
         if (t.type === 'income') n += t.amount;
         else if (t.type === 'expense') n -= t.amount;
+        else if (acc) n += (t.toAccountId === acc ? t.amount : -t.amount);
       }
       return HL.util.round2(n);
     },
@@ -4378,12 +4888,12 @@ HL.views.transactions = {
     label() { return HL.util.fmtMonthLong(this.ym); }
   },
   methods: {
-    prev() { this.ym = HL.util.addMonthKey(this.ym, -1); },
-    next() { this.ym = HL.util.addMonthKey(this.ym, 1); },
     cur() { this.ym = HL.util.currentMonthKey(); },
-    /** 金额展示：支出红 / 收入绿 / 转账灰，带符号 */
+    /** 金额展示：支出红 / 收入绿 / 转账灰，带符号。
+     *  按账户筛选时，转入该账户的转账以该账户视角显示为正号（与 Net 口径一致） */
     amtClass(t) { return t.type === 'income' ? 'amt-pos' : t.type === 'expense' ? 'amt-neg' : 'amt-transfer'; },
     amtText(t) {
+      if (t.type === 'transfer' && this.fAcc && t.toAccountId === this.fAcc) return '+' + this.$money(t.amount);
       const sign = t.type === 'income' ? '+' : '-';
       return sign + this.$money(t.amount);
     },
@@ -4398,8 +4908,17 @@ HL.views.transactions = {
       return this.L.categories.find((c) => c.id === t.categoryId) || null;
     },
     accName(id) { const a = this.L.accounts.find((x) => x.id === id); return a ? a.name : '?'; },
-    /** 打开新增/编辑弹窗 */
-    open(t) {
+    /** 打开新增/编辑弹窗（新增前校验：至少要有一个账户，否则引导去 Accounts 页创建） */
+    async open(t) {
+      // 无账户拦截：交易必须挂在某个账户下。仅拦截"新增"（编辑时账户必然已存在）
+      if (!t && !this.accounts.length) {
+        const go = await HL.store.askConfirm(
+          'You need at least one account before adding a transaction. Go to Accounts and create one?',
+          { confirmText: 'Go to Accounts' }
+        );
+        if (go) this.$s.view = 'accounts'; // 确认后跳转到 Accounts 页
+        return;
+      }
       this.editId = t ? t.id : null;
       this.form = t ? Object.assign({}, t) : {
         type: 'expense', date: HL.util.todayISO(), amount: null,
@@ -4451,11 +4970,7 @@ HL.views.transactions = {
   </div>
 
   <div class="toolbar">
-    <div class="month-nav">
-      <button class="icon-btn" @click="prev"><x-icon name="chev-l"/></button>
-      <b>{{ label }}</b>
-      <button class="icon-btn" @click="next"><x-icon name="chev-r"/></button>
-    </div>
+    <x-month-nav v-model="ym"></x-month-nav>
     <button class="btn btn-sm" @click="cur">This month</button>
     <div class="spacer"></div>
     <input class="field-input" style="min-width:180px" v-model="q" placeholder="Search payee or memo…">
@@ -4523,7 +5038,7 @@ HL.views.transactions = {
       <div class="field"><label class="field-label">Amount</label>
         <input class="field-input" type="number" step="0.01" min="0" v-model.number="form.amount" placeholder="0.00"></div>
       <div class="field"><label class="field-label">Date</label>
-        <input class="field-input" type="date" v-model="form.date"></div>
+        <x-date v-model="form.date"></x-date></div>
     </div>
     <div class="field-row">
       <div class="field"><label class="field-label">{{ form.type === 'transfer' ? 'From account' : 'Account' }}</label>
@@ -4710,7 +5225,7 @@ HL.views.accounts = {
       </div>
       <div class="field">
         <label class="field-label">Opened on</label>
-        <input class="field-input" type="date" v-model="form.openedDate">
+        <x-date v-model="form.openedDate"></x-date>
       </div>
     </div>
     <template #foot>
@@ -4748,8 +5263,6 @@ HL.views.budget = {
     }
   },
   methods: {
-    prev() { this.ym = HL.util.addMonthKey(this.ym, -1); },
-    next() { this.ym = HL.util.addMonthKey(this.ym, 1); },
     cur() { this.ym = HL.util.currentMonthKey(); },
     /** 剩余可花文案（负数 = 超支） */
     leftText(r) {
@@ -4801,11 +5314,7 @@ HL.views.budget = {
       <div class="page-sub">Envelope budgeting — give every dollar a job before the month starts.</div>
     </div>
     <div class="page-actions">
-      <div class="month-nav">
-        <button class="icon-btn" @click="prev"><x-icon name="chev-l"/></button>
-        <b>{{ label }}</b>
-        <button class="icon-btn" @click="next"><x-icon name="chev-r"/></button>
-      </div>
+      <x-month-nav v-model="ym"></x-month-nav>
       <button class="btn btn-sm" @click="cur">Today</button>
     </div>
   </div>
@@ -4887,48 +5396,143 @@ HL.views.budget = {
 
 /* =====================================================================
  * views/reports.js — Reports（报表）
- * 左：当月支出分类环形图（手绘 SVG + hover 提示）
- * 右：近 12 个月收支柱状图（hover 提示）
- * 底部：12 个月均值小结
+ * 月份区间选择（From/To + 快捷范围）作用于全部图表：
+ *   - 区间汇总卡：收入 / 支出 / 净额 / 储蓄率
+ *   - 分类环形图：Expense / Income 可切换（Top 8 + Other）
+ *   - 收支柱状图：区间内逐月对比
+ *   - 净现金流折线图：区间内逐月净额（正负一目了然）
+ *   - Top payees：区间内支出按收款人 Top 5
  * ===================================================================== */
 HL.views = HL.views || {};
 HL.views.reports = {
   name: 'ReportsView',
+  data() {
+    const cur = HL.util.currentMonthKey();
+    return {
+      mode: 'expense',                        // 环形图口径：expense | income
+      fromYm: HL.util.addMonthKey(cur, -11),  // 区间起点（默认近 12 个月）
+      toYm: cur                               // 区间终点
+    };
+  },
   computed: {
     L() { return this.$s.ledger; },
-    /** 当月月份键 */
-    ym() { return HL.util.currentMonthKey(); },
-    /** 环形图数据：当月支出按分类聚合，Top 8 + Other */
+    /**
+     * 区间内月份键序列（From..To 逐月）。
+     * 用户把起点选到终点之后时自动交换，保证序列始终有效。
+     */
+    months() {
+      let a = this.fromYm, b = this.toYm;
+      if (a > b) { const t = a; a = b; b = t; }
+      const out = [];
+      for (let m = a; m <= b; m = HL.util.addMonthKey(m, 1)) {
+        out.push(m);
+        if (out.length > 600) break; // 防御性上限，避免异常范围拖死页面
+      }
+      return out;
+    },
+    /** 区间显示文案（单月只显示一个月） */
+    rangeLabel() {
+      const a = this.months[0], b = this.months[this.months.length - 1];
+      return a === b ? this.$monthLong(a) : this.$monthLong(a) + ' – ' + this.$monthLong(b);
+    },
+    /** 区间内全部交易（所有图表共用这一份筛选结果） */
+    rangeTx() {
+      const set = new Set(this.months);
+      return this.L.transactions.filter((t) => set.has(HL.util.monthKey(t.date)));
+    },
+    /** 区间汇总指标：收入 / 支出 / 净额 / 交易笔数 / 储蓄率 */
+    totals() {
+      const U = HL.util;
+      let income = 0, expense = 0;
+      for (const t of this.rangeTx) {
+        if (t.type === 'income') income += t.amount;
+        else if (t.type === 'expense') expense += t.amount;
+      }
+      income = U.round2(income);
+      expense = U.round2(expense);
+      const net = U.round2(income - expense);
+      // 储蓄率 = 净额 / 收入；区间内无收入时返回 null（界面显示 —）
+      const savingsRate = income > 0 ? Math.round((net / income) * 100) : null;
+      return { income, expense, net, count: this.rangeTx.length, savingsRate };
+    },
+    /** 环形图数据：按当前口径（支出/收入）在区间内按分类聚合，Top 8 + Other */
     donutItems() {
-      const spent = HL.store.spentByCat(this.ym);
+      const U = HL.util;
+      const byId = new Map();
+      for (const t of this.rangeTx) {
+        if (t.type !== this.mode) continue;
+        const id = t.categoryId || '_uncat';
+        byId.set(id, (byId.get(id) || 0) + t.amount);
+      }
       const arr = [];
-      for (const [id, v] of spent.entries()) {
+      for (const [id, v] of byId.entries()) {
         const c = this.L.categories.find((x) => x.id === id);
-        arr.push({ label: c ? c.name : 'Uncategorized', color: c ? c.color : '#94a3b8', value: v });
+        arr.push({ label: c ? c.name : 'Uncategorized', color: c ? c.color : '#94a3b8', value: U.round2(v) });
       }
       arr.sort((a, b) => b.value - a.value);
       if (arr.length > 8) {
         const rest = arr.slice(8);
         const sum = rest.reduce((a, r) => a + r.value, 0);
-        return arr.slice(0, 8).concat([{ label: 'Other', color: '#cbd5e1', value: HL.util.round2(sum) }]);
+        return arr.slice(0, 8).concat([{ label: 'Other', color: '#cbd5e1', value: U.round2(sum) }]);
       }
       return arr;
     },
-    /** 当月支出总额（环形图圆心） */
+    /** 环形图总额（圆心数值） */
     donutTotal() {
       return this.donutItems.reduce((a, i) => a + i.value, 0);
     },
-    /** 近 12 个月收支柱状图数据 */
-    bars() {
-      return HL.store.monthsIncomeExpense(HL.store.last12Months());
+    /** 环形图空态文案（随口径变化） */
+    donutEmpty() {
+      return this.mode === 'expense' ? 'No expenses in this range.' : 'No income in this range.';
     },
-    /** 12 个月均值小结 */
-    averages() {
-      const d = this.bars.filter((m) => m.income || m.expense);
-      const n = d.length || 1;
-      const income = d.reduce((a, m) => a + m.income, 0) / n;
-      const expense = d.reduce((a, m) => a + m.expense, 0) / n;
-      return { income, expense, net: income - expense };
+    /** 区间内逐月收支柱状图数据 */
+    bars() {
+      return HL.store.monthsIncomeExpense(this.months);
+    },
+    /** 区间内逐月净现金流折线数据（复用 bars 的单次遍历结果，不重复扫交易） */
+    netSeries() {
+      return this.bars.map((b) => ({ ym: b.ym, net: HL.util.round2(b.income - b.expense) }));
+    },
+    /**
+     * Top payees：区间内支出按收款人聚合 Top 5（含占 Top5 总额的百分比与配色）
+     */
+    topPayees() {
+      const map = new Map();
+      for (const t of this.rangeTx) {
+        if (t.type !== 'expense') continue;
+        const key = ((t.payee || '').trim() || 'Unspecified');
+        map.set(key, (map.get(key) || 0) + t.amount);
+      }
+      const arr = Array.from(map.entries())
+        .map(([name, v]) => ({ name, value: HL.util.round2(v) }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 5);
+      const grand = arr.reduce((a, r) => a + r.value, 0) || 1;
+      const colors = ['#4f46e5', '#0d9488', '#f59e0b', '#ef4444', '#8b5cf6'];
+      arr.forEach((r, i) => { r.pct = Math.round((r.value / grand) * 100); r.color = colors[i]; });
+      return arr;
+    }
+  },
+  methods: {
+    /** 快捷范围：本月 */
+    qThisMonth() {
+      const cur = HL.util.currentMonthKey();
+      this.fromYm = cur; this.toYm = cur;
+    },
+    /** 快捷范围：近 3 个月（含本月） */
+    qLast3() {
+      const cur = HL.util.currentMonthKey();
+      this.fromYm = HL.util.addMonthKey(cur, -2); this.toYm = cur;
+    },
+    /** 快捷范围：近 12 个月（含本月） */
+    qLast12() {
+      const cur = HL.util.currentMonthKey();
+      this.fromYm = HL.util.addMonthKey(cur, -11); this.toYm = cur;
+    },
+    /** 快捷范围：今年（1 月至当前月） */
+    qThisYear() {
+      const cur = HL.util.currentMonthKey();
+      this.fromYm = cur.slice(0, 4) + '-01'; this.toYm = cur;
     }
   },
   template: `
@@ -4940,15 +5544,47 @@ HL.views.reports = {
     </div>
   </div>
 
+  <!-- 区间选择：From/To 月份 + 快捷范围按钮 -->
+  <div class="toolbar">
+    <div class="field" style="margin:0">
+      <label class="field-label">From</label>
+      <x-month v-model="fromYm"></x-month>
+    </div>
+    <div class="field" style="margin:0">
+      <label class="field-label">To</label>
+      <x-month v-model="toYm"></x-month>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn btn-sm" @click="qThisMonth">This month</button>
+    <button class="btn btn-sm" @click="qLast3">Last 3 months</button>
+    <button class="btn btn-sm" @click="qLast12">Last 12 months</button>
+    <button class="btn btn-sm" @click="qThisYear">This year</button>
+  </div>
+
+  <!-- 区间汇总指标 -->
+  <div class="chips" style="margin-bottom:16px">
+    <div class="chip"><b class="money amt-pos">{{ $money(totals.income) }}</b><span>Income &middot; {{ rangeLabel }}</span></div>
+    <div class="chip"><b class="money">{{ $money(totals.expense) }}</b><span>Expenses</span></div>
+    <div class="chip"><b class="money" :class="totals.net >= 0 ? 'amt-pos' : 'amt-neg'">{{ $money(totals.net) }}</b><span>Net</span></div>
+    <div class="chip"><b>{{ totals.savingsRate == null ? '—' : totals.savingsRate + '%' }}</b><span>Savings rate</span></div>
+    <div class="chip"><b>{{ totals.count }}</b><span>Transactions</span></div>
+  </div>
+
   <div class="charts-grid">
-    <!-- 当月分类环形图 -->
+    <!-- 分类环形图（支出 / 收入可切换） -->
     <div class="card">
       <div class="card-head">
-        <span class="card-title">Spending by category</span>
-        <span class="text-muted" style="font-size:12px">{{ $monthLong(ym) }}</span>
+        <span class="card-title">{{ mode === 'expense' ? 'Spending by category' : 'Income by category' }}</span>
+        <span class="text-muted" style="font-size:12px">{{ rangeLabel }}</span>
       </div>
-      <div class="card-pad">
-        <donut-chart :items="donutItems" center-label="Spent this month" :center-value="$money(donutTotal)"></donut-chart>
+      <div class="card-pad" style="padding-bottom:6px">
+        <div class="seg" style="margin:0 auto 10px;max-width:240px">
+          <button :class="{on: mode === 'expense'}" @click="mode = 'expense'">Expenses</button>
+          <button :class="{on: mode === 'income'}" @click="mode = 'income'">Income</button>
+        </div>
+        <donut-chart :items="donutItems" :empty-text="donutEmpty"
+          :center-label="mode === 'expense' ? 'Spent' : 'Earned'"
+          :center-value="$money(donutTotal)"></donut-chart>
       </div>
       <div class="legend">
         <div class="legend-row" v-for="i in donutItems" :key="i.label">
@@ -4960,7 +5596,7 @@ HL.views.reports = {
       </div>
     </div>
 
-    <!-- 12 个月趋势 -->
+    <!-- 区间内逐月收支对比 -->
     <div class="card">
       <div class="card-head">
         <span class="card-title">Income vs expenses</span>
@@ -4975,19 +5611,35 @@ HL.views.reports = {
     </div>
   </div>
 
-  <!-- 均值小结 -->
-  <div class="stat-grid" style="margin-top:14px;grid-template-columns:repeat(3,1fr)">
-    <div class="stat-card">
-      <div class="stat-label">Avg monthly income</div>
-      <div class="stat-value money amt-pos">{{ $money(averages.income) }}</div>
+  <div class="charts-grid" style="margin-top:14px">
+    <!-- 净现金流趋势折线 -->
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">Net cash flow trend</span>
+        <span class="text-muted" style="font-size:12px">Income minus expenses, per month</span>
+      </div>
+      <div class="card-pad">
+        <net-line-chart :data="netSeries"></net-line-chart>
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Avg monthly spending</div>
-      <div class="stat-value money">{{ $money(averages.expense) }}</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Avg monthly net</div>
-      <div class="stat-value money" :class="averages.net >= 0 ? 'amt-pos' : 'amt-neg'">{{ $money(averages.net) }}</div>
+
+    <!-- Top payees（区间内支出 Top 5） -->
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">Top payees</span>
+        <span class="text-muted" style="font-size:12px">Where the money went</span>
+      </div>
+      <div class="card-pad" style="padding-bottom:8px" v-if="topPayees.length">
+        <div class="legend">
+          <div class="legend-row" v-for="p in topPayees" :key="p.name">
+            <span class="legend-dot" :style="{ background: p.color }"></span>
+            <span class="lg-name ellipsis">{{ p.name }}</span>
+            <span class="lg-val">{{ $money(p.value) }}</span>
+            <span class="lg-pct">{{ p.pct }}%</span>
+          </div>
+        </div>
+      </div>
+      <div v-else class="empty" style="padding:40px 20px">No expenses in this range yet.</div>
     </div>
   </div>
 </div>`
@@ -4996,7 +5648,7 @@ HL.views.reports = {
 /* =====================================================================
  * views/settings.js — Settings（设置）
  * 分区：常规（货币）/ 安全（改密码、记住我、手动锁定、安全须知）/
- *       分类管理 / 数据（Excel 导出、JSON 备份、快照恢复）
+ *       分类管理 / 数据（Excel 导出、快照恢复）
  * ===================================================================== */
 HL.views = HL.views || {};
 HL.views.settings = {
@@ -5082,14 +5734,6 @@ HL.views.settings = {
       }
       this.expBusy = false;
     },
-    /** 导出 JSON 备份（明文警告 -> 确认 -> 下载） */
-    async doJson() {
-      const ok = await HL.store.askConfirm(
-        'A JSON backup is NOT encrypted — anyone who gets this file can read every transaction. Continue?',
-        { title: 'Export unencrypted backup', danger: true, confirmText: 'Export anyway' }
-      );
-      if (ok) HL.store.exportJsonBackup();
-    },
     /** 刷新快照列表（打开设置页与恢复后调用） */
     async loadSnaps() {
       try { this.snaps = await HL.idb.listSnapshots(); } catch (e) { this.snaps = []; }
@@ -5130,8 +5774,8 @@ HL.views.settings = {
     </div>
   </div>
 
+  <!-- 设置网格：卡片直接平铺，同一行两张卡自动等高（grid stretch） -->
   <div class="set-grid">
-    <div style="display:flex;flex-direction:column;gap:14px">
       <!-- 常规 -->
       <div class="card set-card">
         <h3>General</h3>
@@ -5194,6 +5838,47 @@ HL.views.settings = {
         </div>
       </div>
 
+      <!-- 数据 -->
+      <div class="card set-card">
+        <h3>Export &amp; backup</h3>
+        <div class="set-desc">Excel reports are generated locally — no upload, ever.</div>
+        <div class="set-row" style="align-items:flex-end">
+          <div style="flex:1">
+            <div class="set-row-label">Excel report (.xlsx)</div>
+            <div class="set-row-sub">Three sheets: Transactions, Monthly Summary, Category Breakdown.</div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <x-month v-model="expFrom" style="width:150px"></x-month>
+              <span style="align-self:center" class="text-muted">to</span>
+              <x-month v-model="expTo" style="width:150px"></x-month>
+            </div>
+          </div>
+          <button class="btn btn-primary" :disabled="expBusy" @click="doExport">
+            <x-icon name="download"/>{{ expBusy ? 'Building…' : 'Export' }}
+          </button>
+        </div>
+        <!-- 工作簿内容明细：补足卡片高度（与去掉的 JSON 行相当），并让导出内容一目了然 -->
+        <div class="set-row" style="display:block">
+          <div class="set-row-label">Inside the workbook</div>
+          <div class="set-row-sub" style="margin-top:6px">&bull; <b>Transactions</b> — every record in the range, with status, category and payee.</div>
+          <div class="set-row-sub">&bull; <b>Monthly Summary</b> — income, expenses and net cash flow per month.</div>
+          <div class="set-row-sub">&bull; <b>Category Breakdown</b> — totals and spending share by category.</div>
+        </div>
+      </div>
+
+      <!-- 快照 -->
+      <div class="card set-card">
+        <h3>Snapshots</h3>
+        <div class="set-desc">Snapshots are kept encrypted in this browser: the latest saves from today, plus one per recent day (up to 7 days). If a file gets corrupted or a mistake slips in, roll back here.</div>
+        <div v-if="!snaps.length" class="empty" style="padding:18px">No snapshots yet — they appear after each save.</div>
+        <div class="snap-row" v-for="sn in snaps" :key="sn.id">
+          <div>
+            <b>{{ new Date(sn.savedAt).toLocaleString('en-US') }}</b>
+            <span class="text-muted" style="margin-left:8px">{{ $bytes(sn.size) }}</span>
+          </div>
+          <button class="btn btn-sm" @click="restore(sn)"><x-icon name="restore"/>Restore</button>
+        </div>
+      </div>
+
       <!-- 修改密码 -->
       <div class="card set-card">
         <h3>Change master password</h3>
@@ -5214,49 +5899,6 @@ HL.views.settings = {
         <button class="btn btn-primary" style="margin-top:6px" :disabled="!pwOld || !pwOk || pwBusy" @click="changePw">
           {{ pwBusy ? 'Re-encrypting…' : 'Change password' }}
         </button>
-      </div>
-    </div>
-
-    <div style="display:flex;flex-direction:column;gap:14px">
-      <!-- 数据 -->
-      <div class="card set-card">
-        <h3>Export &amp; backup</h3>
-        <div class="set-desc">Excel reports are generated locally — no upload, ever.</div>
-        <div class="set-row" style="align-items:flex-end">
-          <div style="flex:1">
-            <div class="set-row-label">Excel report (.xlsx)</div>
-            <div class="set-row-sub">Three sheets: Transactions, Monthly Summary, Category Breakdown.</div>
-            <div style="display:flex;gap:8px;margin-top:8px">
-              <input class="field-input" type="month" v-model="expFrom" style="width:150px">
-              <span style="align-self:center" class="text-muted">to</span>
-              <input class="field-input" type="month" v-model="expTo" style="width:150px">
-            </div>
-          </div>
-          <button class="btn btn-primary" :disabled="expBusy" @click="doExport">
-            <x-icon name="download"/>{{ expBusy ? 'Building…' : 'Export' }}
-          </button>
-        </div>
-        <div class="set-row">
-          <div>
-            <div class="set-row-label">JSON backup</div>
-            <div class="set-row-sub">Full plaintext copy — keep it somewhere safe.</div>
-          </div>
-          <button class="btn" @click="doJson"><x-icon name="file"/>Export</button>
-        </div>
-      </div>
-
-      <!-- 快照 -->
-      <div class="card set-card">
-        <h3>Snapshots</h3>
-        <div class="set-desc">The last 3 saves are kept encrypted in this browser. If a file gets corrupted or a mistake slips in, roll back here.</div>
-        <div v-if="!snaps.length" class="empty" style="padding:18px">No snapshots yet — they appear after each save.</div>
-        <div class="snap-row" v-for="sn in snaps" :key="sn.id">
-          <div>
-            <b>{{ new Date(sn.savedAt).toLocaleString('en-US') }}</b>
-            <span class="text-muted" style="margin-left:8px">{{ $bytes(sn.size) }}</span>
-          </div>
-          <button class="btn btn-sm" @click="restore(sn)"><x-icon name="restore"/>Restore</button>
-        </div>
       </div>
 
       <!-- 分类管理 -->
@@ -5281,8 +5923,8 @@ HL.views.settings = {
         </div>
       </div>
 
-      <!-- 关于 -->
-      <div class="card set-card">
+      <!-- 关于（跨两列的页脚条） -->
+      <div class="card set-card" style="grid-column:1/-1">
         <h3>About</h3>
         <div class="set-desc" style="margin-bottom:8px">
           Home Ledger v1.0 — a single-file, offline, encrypted household ledger.
@@ -5290,7 +5932,6 @@ HL.views.settings = {
         </div>
         <div class="secure-row"><x-icon name="shield"/>Forgot the master password = the data is unrecoverable. Keep your hint subtle.</div>
       </div>
-    </div>
   </div>
 </div>`
 };
@@ -5339,7 +5980,8 @@ HL.views.guide = {
         <p>
           Choose a folder you trust, such as Documents or a folder that is already synced.
           The file is named <b>FamilyLedger.hledger</b> and is encrypted with AES-256-GCM.
-          On later visits the welcome screen offers <b>Continue where you left off</b>.
+          On later visits the welcome screen offers <b>Continue where you left off</b> — or,
+          in browsers without direct file access, <b>Continue with the in-browser copy</b>.
         </p>
       </div>
       <div class="guide-step">
@@ -5363,7 +6005,7 @@ HL.views.guide = {
       </div>
       <ul class="guide-list">
         <li>Four cards summarise <b>net worth</b>, this month's income, expenses and net cash flow.</li>
-        <li><b>Due in the next 30 days</b> lists upcoming bills. Press <b>Paid</b> to record one instantly.</li>
+        <li><b>Due in the next 30 days</b> lists upcoming bills. Press <b>Paid</b> to record one instantly with today's date.</li>
         <li>The account panel shows a balance bar per account; the budget panel shows the five busiest envelopes.</li>
       </ul>
     </div>
@@ -5390,7 +6032,8 @@ HL.views.guide = {
       <ul class="guide-list">
         <li>Choose <b>Expense</b>, <b>Income</b> or <b>Transfer</b>, then fill in date, amount, account, category, payee and an optional memo.</li>
         <li>Click the status dot to cycle <b>Pending → Cleared → Reconciled</b> while you match your bank statement.</li>
-        <li>Filter by month, account, category or search text; the footer shows the running total of the filtered rows.</li>
+        <li>Filter by month, account, category or search text; the footer shows the running total of the filtered rows — filtered to one account, transfers count from that account's point of view (money in as +, out as −).</li>
+        <li>If no account exists yet, <b>Add transaction</b> points you to Accounts first instead of showing an empty form.</li>
       </ul>
     </div>
 
@@ -5402,8 +6045,8 @@ HL.views.guide = {
       </div>
       <ul class="guide-list">
         <li>Add a recurring bill with payee, amount, category, account, frequency (weekly, monthly, quarterly or yearly) and first due date.</li>
-        <li><b>Mark as paid</b> creates the matching expense and moves the due date to the next cycle.</li>
-        <li>Overdue items turn red, bills within a few days turn amber, and estimated amounts are marked with <b>~</b>.</li>
+        <li><b>Mark as paid</b> creates the matching expense and moves the due date to the next cycle — a bill due on the 31st stays on the month's last day instead of creeping earlier. Fixed bills keep their standard amount; for estimate bills (marked <b>~</b>) the amount you pay becomes the new estimate and the <b>~</b> marker stays on so you enter the real amount again next month.</li>
+        <li>Overdue items turn red and bills due within a few days turn amber.</li>
       </ul>
     </div>
 
@@ -5427,9 +6070,9 @@ HL.views.guide = {
         <div><b>Reports</b><span>Where it went</span></div>
       </div>
       <ul class="guide-list">
-        <li>The donut breaks down spending by category for the selected month, with a legend and percentages.</li>
-        <li>The bar chart compares income and expenses across the last twelve months.</li>
-        <li>Hover any slice or bar for exact amounts; the tooltip is local and instant.</li>
+        <li>Pick any <b>date range</b> (From/To months or one-click presets like Last 12 months). Summary tiles show income, expenses, net, savings rate and transaction count for the range.</li>
+        <li>The donut breaks the range down by category — switch between <b>Expenses</b> and <b>Income</b>. The bar chart compares them month by month, and a line chart tracks <b>net cash flow</b>.</li>
+        <li><b>Top payees</b> lists where the money actually went. Hover any chart for exact amounts; every chart scales with its card.</li>
       </ul>
     </div>
 
@@ -5441,8 +6084,8 @@ HL.views.guide = {
       </div>
       <ul class="guide-list">
         <li><b>Currency</b> (USD, EUR, GBP), remember-me, lock now and change master password.</li>
-        <li>Restore one of the last three encrypted snapshots if a mistake slips in.</li>
-        <li>Export an Excel workbook, download a JSON backup, or manage categories.</li>
+        <li>Restore an encrypted snapshot if a mistake slips in — today's latest saves plus one per recent day are kept.</li>
+        <li>Export an Excel workbook or manage categories.</li>
       </ul>
     </div>
 
@@ -5467,7 +6110,7 @@ HL.views.guide = {
       <li><x-icon name="check"/>Give every uncategorised expense a category so reports stay accurate.</li>
       <li><x-icon name="check"/>Look at envelopes above 75% and decide whether to adjust next month.</li>
       <li><x-icon name="check"/>Reconcile cleared transactions against your bank statement.</li>
-      <li><x-icon name="check"/>Compare this month's donut with last month to spot surprises early.</li>
+      <li><x-icon name="check"/>Compare recent months in Reports (try the Last 3 months preset) to spot surprises early.</li>
       <li><x-icon name="check"/>Export an Excel report at month end if you keep external copies.</li>
     </ul>
   </div>
@@ -5496,10 +6139,9 @@ HL.views.guide = {
       </div>
       <ul class="guide-list">
         <li>Everything lives in one <b>.hledger</b> file that you choose; there is no account and no sync service.</li>
-        <li>The last three saves are kept as encrypted snapshots inside this browser, ready to restore from Settings.</li>
+        <li>Encrypted snapshots are kept inside this browser for seven days — today's latest saves plus one per earlier day — ready to restore from Settings.</li>
         <li><b>Excel export</b> produces Transactions, Monthly Summary and Category Breakdown sheets.</li>
-        <li><b>JSON backup</b> is a plaintext copy — store it somewhere safe or skip it.</li>
-        <li>In browsers without direct file access, saving downloads a new copy instead of overwriting the file.</li>
+        <li>In browsers without direct file access, changes are auto-saved to an encrypted in-browser copy that the welcome screen resumes; <b>Download a copy</b> in Settings exports a file any time.</li>
       </ul>
     </div>
   </div>
@@ -5527,8 +6169,8 @@ HL.views.guide = {
       <p>The app never talks to the network. If you want sync, keep the .hledger file inside a folder your cloud drive already syncs, and open that copy on each device.</p>
     </details>
     <details>
-      <summary>Why do I see "Download save" instead of automatic saving?</summary>
-      <p>Your browser cannot write files directly (Firefox and some Safari versions). In that mode every save downloads a fresh encrypted copy, and you reopen it with <b>Open an existing ledger file</b>.</p>
+      <summary>Why does my browser save inside the browser instead of writing my ledger file?</summary>
+      <p>Some browsers (Firefox and Safari) cannot overwrite files directly. In that mode changes are auto-saved to an encrypted <b>in-browser copy</b> — next visit, <b>Continue with the in-browser copy</b> on the welcome screen resumes it, and <b>Download a copy</b> in Settings exports a file whenever you want one. For direct saving to your ledger file, open this app in <b>Chrome or Edge</b>.</p>
     </details>
   </div>
 </div>`
@@ -5622,8 +6264,12 @@ HL.views.guide = {
   app.component('x-modal', HL.components.XModal);
   app.component('toaster', HL.components.Toaster);
   app.component('confirm-host', HL.components.ConfirmHost);
+  app.component('x-month', HL.components.MonthInput);
+  app.component('x-date', HL.components.DateInput);
+  app.component('x-month-nav', HL.components.MonthNav);
   app.component('donut-chart', HL.charts.DonutChart);
   app.component('bars-chart', HL.charts.BarsChart);
+  app.component('net-line-chart', HL.charts.NetLineChart);
 
   // ---- 注册视图组件（<component :is="'view-' + view"> 动态路由） ----
   app.component('view-welcome', HL.views.welcome);
